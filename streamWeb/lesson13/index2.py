@@ -1,58 +1,54 @@
 import requests
 from pydantic import BaseModel,Field,RootModel,field_validator,field_serializer
 import streamlit as st
+import source
+from source import Root
+import pandas as pd
 
-class Site(BaseModel):
-    站點名稱:str = Field(alias="sna")
-    行政區:str = Field(alias="sarea")
-    日期時間:str = Field(alias='mday')
-    地址:str = Field(alias='ar')
-    總數:int = Field(alias='tot')
-    可借:int = Field(alias='sbi')
-    可還:int = Field(alias='bemp')
-    狀態:bool = Field(alias='act')
-    緯度:float = Field(alias='lat')
-    經度:float = Field(alias='lng')
 
-    @field_validator('站點名稱',mode='before')
-    @classmethod
-    def abc(cls,value):
-        return value.split('_')[-1]
+try:
+    data_str = source.download_youbike()
+except Exception as e:
+    st.error(e)
+else:
+    root = Root.model_validate_json(data_str)
+    data = root.model_dump()
+    areas:list[str] = list(set(map(lambda value:value['行政區'],data)))
+
+    st.title("新北市youbike各行政區站點資料")
+    tableContainer = st.container(border=False)
     
-    @field_validator('日期時間',mode='before')
-    @classmethod
-    def abcd(cls,value):
-        return f'{value[:4]}-{value[4:6]}-{value[6:8]} {value[8:10]}:{value[10:12]}:{value[12:]}'
+    def area_change():
+        sarea_name = st.session_state.sarea
+        #st.write(sarea_name)        
+        display_data = []
+        for item in data:
+            if item['行政區'] == sarea_name:
+                display_data.append(item)
+        with tableContainer:
+            st.subheader(sarea_name)
+            df1 = pd.DataFrame(display_data,
+                               columns=['站點名稱','日期時間','地址','總數','可借','可還'])
+            st.dataframe(data=df1)
+
+            df2 = pd.DataFrame(display_data,
+                               columns=['站點名稱','總數','可借'])
+            
+            st.scatter_chart(df2,
+                             x='站點名稱',
+                             y='可借',
+                             size='可借')
+            
+            df3 = pd.DataFrame(display_data,
+                               columns=['站點名稱','總數','可還'])
+            
+            st.scatter_chart(df3,
+                             x='站點名稱',
+                             y='可還',
+                             size='可還')
+
+
+
+    with st.sidebar:
+        st.selectbox(":orange[請選擇行政區域:]",options=areas,on_change=area_change,key='sarea')
     
-    @field_serializer('狀態')
-    def abce(self,value):
-        if value:
-            return "營業中"
-        else:
-            return "維護中"
-        
-class Root(RootModel):
-    root:list[Site]
-
-
-@st.cache_data
-def download_youbike()->str:
-    youbike_url = 'https://data.ntpc.gov.tw/api/datasets/010e5b15-3823-4b20-b401-b1cf000550c5/json?size=2000'
-    try:
-        response = requests.get(youbike_url)
-    except Exception as e:
-        print(e)
-    else:
-        return response.text
-
-data_str = download_youbike()
-root = Root.model_validate_json(data_str)
-data = root.model_dump()
-
-def ijk(value):
-    return value['行政區']
-
-areas:list[str] = list(set(map(ijk,data)))
-
-option = st.selectbox("請選擇行政區",areas)
-st.write("您選擇:", option)
